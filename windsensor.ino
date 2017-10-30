@@ -4,6 +4,8 @@
 #include <Adafruit_ADS1015.h>
 #include <stdio.h>
 
+//test changes by cw
+
 Adafruit_ADS1115 ads;  /* Use this for the 16-bit version */
 // set up variables using the SD utility library functions:
 Sd2Card card;
