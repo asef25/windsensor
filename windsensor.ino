@@ -1,14 +1,41 @@
 #include <Wire.h>
+#include <SPI.h>
+#include <SD.h>
 #include <Adafruit_ADS1015.h>
 #include <stdio.h>
-#include <inttypes.h>
 
 Adafruit_ADS1115 ads;  /* Use this for the 16-bit version */
+// set up variables using the SD utility library functions:
+Sd2Card card;
+//SdVolume volume;
+//SdFile root;
+
+const int chipSelect = 10;
 
 void setup(void)
 {
+ // Open serial communications and wait for port to open:
   Serial.begin(9600);
-  Serial.println("Hello!");
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+
+  Serial.print("\nInitializing SD card...");
+  // make sure that the default chip select pin is set to
+  // output, even if you don't use it:
+  pinMode(10, OUTPUT);
+  // we'll use the initialization code from the utility libraries
+  // since we're just testing if the card is working!
+  if (!card.init(SPI_HALF_SPEED, chipSelect)) {
+    Serial.println("initialization failed. Things to check:");
+    Serial.println("* is a card inserted?");
+    Serial.println("* is your wiring correct?");
+    Serial.println("* did you change the chipSelect pin to match your shield or module?");
+    return;
+  } else {
+    Serial.println("Wiring is correct and a card is present.");
+  }
+
   
   Serial.println("Getting differential reading from AIN0 (P) and AIN1 (N)");
   Serial.println("ADC Range: +/- 6.144V (1 bit = 3mV/ADS1015, 0.1875mV/ADS1115)");
@@ -37,7 +64,7 @@ void loop(void)
   /* Be sure to update this value based on the IC and the gain settings! */
 #define  MULTIPLIER 0.1875F /* ADS1115  @ +/- 6.144V gain (16-bit results) */
 
-  results_x    = ads.readADC_Differential_0_1();
+  results_x    = ads.readADC_Differential_0_1(); 
   results_y    = ads.readADC_Differential_2_3();  
 
 #define MAP(results) \
