@@ -2,22 +2,38 @@
 #include <SPI.h>
 #include <SD.h>
 #include <Adafruit_ADS1015.h>
+#include "RTClib.h"
 
-const char  FILE_PATH[] = "datalog.txt";
+RTC_PCF8523      rtc;
 Adafruit_ADS1115 ads;  /* Use this for the 16-bit version */
-const int chipSelect = 10;
+File        dataFile;
+
+const char  FILE_PATH[]   = "datalog.txt";
+const int chipSelect      = 10;
 
 void setup(void)
 {
-    String str = "";
-    File dataFile;
-    
+        
     // Open serial communications and wait for port to open:
-    Serial.begin(57600);
     while (!Serial) {
-      ; // wait for serial port to connect. Needed for native USB port only
+        ; // wait for serial port to connect. Needed for native USB port only
+    }
+    Serial.begin(57600);
+
+    if (! rtc.begin()) {
+        Serial.println("Couldn't find RTC");
+        while (1);
     }
 
+    if (! rtc.initialized()) {
+        Serial.println("RTC is NOT running!");
+        // following line sets the RTC to the date & time this sketch was compiled
+        // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+        // This line sets the RTC with an explicit date & time, for example to set
+        // January 21, 2014 at 3am you would call:
+        // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
+      }
+    
     Serial.print("\nInitializing SD card...");
     // make sure that the default chip select pin is set to
     // output, even if you don't use it:
@@ -51,29 +67,30 @@ void setup(void)
     // ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV
 
 #define WRITE_TO_SDCARD(text)                                               \ 
-    if((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                        \
+    if((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                 \
         dataFile.println(text);                                             \
         dataFile.close();                                                   \
     } else {                                                                \
         Serial.println("Failed to open or create " + String(FILE_PATH));    \ 
     }                       
 
-    WRITE_TO_SDCARD("x_mV,\ty_mv,\tx_lbs,\ty_lbs");
-    Serial.println("x_mV,\ty_mv,\tx_lbs,\ty_lbs");
+    WRITE_TO_SDCARD("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs");
+    Serial.println("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs");
 
     ads.begin();
 }
 
 void loop(void)
 {
-    File dataFile;
     int16_t results_x, results_y;
     float lbs_x, lbs_y;
     String str;
-  
+
+    
   /* Be sure to update this value based on the IC and the gain settings! */
 #define  MULTIPLIER 0.1875F /* ADS1115  @ +/- 6.144V gain (16-bit results) */
 
+    DateTime now = rtc.now();
     results_x    = ads.readADC_Differential_0_1(); 
     results_y    = ads.readADC_Differential_2_3();  
 
@@ -82,8 +99,20 @@ void loop(void)
 
     lbs_x        = MAP(results_x);
     lbs_y        = MAP(results_y);
-  
+
     str = "";
+    str += String(now.year(), DEC);
+    str += '/';
+    str += String(now.month(), DEC);
+    str += '/';
+    str += String(now.day(), DEC);
+    str += " ";
+    str += String(now.hour(), DEC);
+    str += ':';
+    str += String(now.minute(), DEC);
+    str += ':';
+    str += String(now.second(), DEC);  
+    str += ",\t";
     str += String(results_x * MULTIPLIER);
     str += ",\t";
     str += String(results_y * MULTIPLIER);
