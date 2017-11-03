@@ -3,12 +3,7 @@
 #include <SD.h>
 #include <Adafruit_ADS1015.h>
 
-<<<<<<< HEAD
 const char  FILE_PATH[] = "datalog.txt";
-=======
-//test changes by cw
-
->>>>>>> 4e8c3ed522938f459a29675ce800d3ef7e973f23
 Adafruit_ADS1115 ads;  /* Use this for the 16-bit version */
 const int chipSelect = 10;
 
