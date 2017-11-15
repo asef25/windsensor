@@ -1,15 +1,19 @@
 #include <Wire.h>
-#include <SPI.h>
+//#include <SPI.h>
 #include <SD.h>
 #include <Adafruit_ADS1015.h>
 #include "RTClib.h"
 
 RTC_PCF8523      rtc;
 Adafruit_ADS1115 ads;  /* Use this for the 16-bit version */
-File        dataFile;
 
+File        dataFile;
 const char  FILE_PATH[]   = "datalog.txt";
 const int chipSelect      = 10;
+
+/*Wind dir variables*/
+const int sensorPin = A5;    //input value: wind sensor analog
+int sensorValue = 0;  // variable to store the value coming from the sensor
 
 void setup(void)
 {
@@ -32,7 +36,9 @@ void setup(void)
         // This line sets the RTC with an explicit date & time, for example to set
         // January 21, 2014 at 3am you would call:
         // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
-      }
+    }else
+        rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+      
     
     Serial.print("\nInitializing SD card...");
     // make sure that the default chip select pin is set to
@@ -74,8 +80,8 @@ void setup(void)
         Serial.println("Failed to open or create " + String(FILE_PATH));    \ 
     }                       
 
-    WRITE_TO_SDCARD("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs");
-    Serial.println("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs");
+    WRITE_TO_SDCARD("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs,\tdir");
+    Serial.println("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs,\tdir");
 
     ads.begin();
 }
@@ -92,7 +98,10 @@ void loop(void)
 
     DateTime now = rtc.now();
     results_x    = ads.readADC_Differential_0_1(); 
-    results_y    = ads.readADC_Differential_2_3();  
+    results_y    = ads.readADC_Differential_2_3();
+
+    //read wind dir analog value
+    sensorValue = analogRead(sensorPin);
 
 #define MAP(results) \
     (((float)results * MULTIPLIER) / 100.0 * 25.0)
@@ -121,8 +130,8 @@ void loop(void)
     str += String(lbs_x);
     str += ",\t";
     str += String(lbs_y);
-    str += "\n";
-
+    str += ",\t";
+    str += String(((float)sensorValue - 202.0f) / (1013.0f - 202.0f) * (360.0f - 0.0f));
     WRITE_TO_SDCARD(str);
     Serial.println(str);
     
