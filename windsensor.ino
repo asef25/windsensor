@@ -4,6 +4,12 @@
 #include <Adafruit_ADS1015.h>
 #include "RTClib.h"
 
+const byte interruptPin = 2;
+volatile int counter; //# of pulses
+volatile long rpm;    //revs per min
+volatile bool rw_flag;
+volatile float V;     //Velocity [miles per hour]
+
 RTC_PCF8523      rtc;
 Adafruit_ADS1115 ads;  /* Use this for the 16-bit version */
 
@@ -72,6 +78,27 @@ void setup(void)
     // ads.setGain(GAIN_EIGHT);      // 8x gain   +/- 0.512V  1 bit = 0.25mV   0.015625mV
     // ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV
 
+    ads.begin();
+
+// initialize timer1 - 16 bit 65536
+    noInterrupts();           // disable all interrupts
+    TCCR1A  = 0;
+    TCCR1B  = 0;
+    
+    TCNT1   = 15625;            // preload timer 16MHz/1024 => Period=4sec
+    TCCR1B |= ((1 << CS12)| (1 << CS10)) ;    // 1024 prescaler 
+    TIMSK1 |= (1 << TOIE1);   // enable timer overflow interrupt
+    interrupts();             // enable all interrupts
+
+// initialize timer0 - rising edge triggered interrupt - pin 2
+    attachInterrupt(digitalPinToInterrupt(interruptPin), pin_irq_handler, RISING );
+
+    // initialize variables for interrupts
+    counter = 0;
+    rpm     = 0;
+    rw_flag = 0;
+    V       = 0.0f;
+
 #define WRITE_TO_SDCARD(text)                                               \ 
     if((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                 \
         dataFile.println(text);                                             \
@@ -80,10 +107,22 @@ void setup(void)
         Serial.println("Failed to open or create " + String(FILE_PATH));    \ 
     }                       
 
-    WRITE_TO_SDCARD("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs,\tdir");
-    Serial.println("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs,\tdir");
+    WRITE_TO_SDCARD("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs,\tdir,\trpm,\tVel");
+    Serial.println("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs,\tdir,\trpm,\tVel");
+}
 
-    ads.begin();
+ISR(TIMER1_OVF_vect)        
+{
+    rpm     = counter * 15L;
+    rpm    /= 40L;
+    V       = (rpm / 16.767f) + 0.6f;
+    rw_flag = 1;
+    counter = 0;
+}
+
+void pin_irq_handler()
+{
+    ++counter;
 }
 
 void loop(void)
@@ -93,47 +132,56 @@ void loop(void)
     String str;
 
     
-  /* Be sure to update this value based on the IC and the gain settings! */
+    if(rw_flag){
+      
+        rw_flag = !rw_flag;
+        
+        DateTime now = rtc.now();
+        results_x    = ads.readADC_Differential_0_1(); 
+        results_y    = ads.readADC_Differential_2_3();
+    
+        //read wind dir analog value
+        sensorValue = analogRead(sensorPin);
+
+/* Be sure to update this value based on the IC and the gain settings! */
 #define  MULTIPLIER 0.1875F /* ADS1115  @ +/- 6.144V gain (16-bit results) */
-
-    DateTime now = rtc.now();
-    results_x    = ads.readADC_Differential_0_1(); 
-    results_y    = ads.readADC_Differential_2_3();
-
-    //read wind dir analog value
-    sensorValue = analogRead(sensorPin);
 
 #define MAP(results) \
     (((float)results * MULTIPLIER) / 100.0 * 25.0)
 
-    lbs_x        = MAP(results_x);
-    lbs_y        = MAP(results_y);
-
-    str = "";
-    str += String(now.year(), DEC);
-    str += '/';
-    str += String(now.month(), DEC);
-    str += '/';
-    str += String(now.day(), DEC);
-    str += " ";
-    str += String(now.hour(), DEC);
-    str += ':';
-    str += String(now.minute(), DEC);
-    str += ':';
-    str += String(now.second(), DEC);  
-    str += ",\t";
-    str += String(results_x * MULTIPLIER);
-    str += ",\t";
-    str += String(results_y * MULTIPLIER);
-    str += ",\t";
+        lbs_x        = MAP(results_x);
+        lbs_y        = MAP(results_y);
     
-    str += String(lbs_x);
-    str += ",\t";
-    str += String(lbs_y);
-    str += ",\t";
-    str += String(((float)sensorValue - 202.0f) / (1013.0f - 202.0f) * (360.0f - 0.0f));
-    WRITE_TO_SDCARD(str);
-    Serial.println(str);
+        str = "";
+        str += String(now.year(), DEC);
+        str += '/';
+        str += String(now.month(), DEC);
+        str += '/';
+        str += String(now.day(), DEC);
+        str += " ";
+        str += String(now.hour(), DEC);
+        str += ':';
+        str += String(now.minute(), DEC);
+        str += ':';
+        str += String(now.second(), DEC);  
+        str += ",\t";
+        str += String(results_x * MULTIPLIER);
+        str += ",\t";
+        str += String(results_y * MULTIPLIER);
+        str += ",\t";
+        
+        str += String(lbs_x);
+        str += ",\t";
+        str += String(lbs_y);
+        str += ",\t";
+        str += String(((float)sensorValue - 202.0f) / (1013.0f - 202.0f) * (360.0f - 0.0f));
+        str += ",\t";
+        str += String(rpm);
+        str += ",\t";
+        str += String(V);
+        
+        WRITE_TO_SDCARD(str);
+        Serial.println(str);
+    }
     
-    delay(5000);
 }
