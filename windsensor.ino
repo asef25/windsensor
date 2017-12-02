@@ -1,5 +1,5 @@
 #include <Wire.h>
-//#include <SPI.h>
+#include <SPI.h>
 #include <SD.h>
 #include <Adafruit_ADS1015.h>
 #include "RTClib.h"
@@ -18,7 +18,7 @@ const char  FILE_PATH[]   = "datalog.txt";
 const int chipSelect      = 10;
 
 /*Wind dir variables*/
-const int sensorPin = A5;    //input value: wind sensor analog
+const int sensorPin = A3;    //input value: wind sensor analog
 int sensorValue = 0;  // variable to store the value coming from the sensor
 
 void setup(void)
@@ -56,7 +56,7 @@ void setup(void)
         Serial.println("* is a card inserted?");
         Serial.println("* is your wiring correct?");
         Serial.println("* did you change the chipSelect pin to match your shield or module?");
-        return;
+       // return;
     } else {
         Serial.println("Wiring is correct and a card is present.");
     }
@@ -128,6 +128,7 @@ void loop(void)
 {
     int16_t results_x, results_y;
     float lbs_x, lbs_y;
+    float x_mV, y_mV;
     String str;
 
     
@@ -145,11 +146,11 @@ void loop(void)
 /* Be sure to update this value based on the IC and the gain settings! */
 #define  MULTIPLIER 0.1875F /* ADS1115  @ +/- 6.144V gain (16-bit results) */
 
-#define MAP(results) \
-    (((float)results * MULTIPLIER) / 100.0 * 25.0)
-
-        lbs_x        = MAP(results_x);
-        lbs_y        = MAP(results_y);
+        x_mV   = results_x * MULTIPLIER;
+        y_mV   = results_y * MULTIPLIER;
+        
+        lbs_x        = x_mV / 100.0 * 25.0;
+        lbs_y        = y_mV / 100.0 * 25.0;
     
         str = "";
         str += String(now.year(), DEC);
@@ -164,16 +165,16 @@ void loop(void)
         str += ':';
         str += String(now.second(), DEC);  
         str += ",\t";
-        str += String(results_x * MULTIPLIER);
+        str += String(x_mV);
         str += ",\t";
-        str += String(results_y * MULTIPLIER);
+        str += String(y_mV);
         str += ",\t";
         
         str += String(lbs_x);
         str += ",\t";
         str += String(lbs_y);
         str += ",\t";
-        str += String(((float)sensorValue - 202.0f) / (1013.0f - 202.0f) * (360.0f - 0.0f));
+        str += String(((float)sensorValue - 0.0f) / (1023.0f - 0.0f) * (360.0f - 0.0f));
         str += ",\t";
         str += String(rpm);
         str += ",\t";
