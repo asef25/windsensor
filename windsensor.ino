@@ -4,11 +4,13 @@
 #include <Adafruit_ADS1015.h>
 #include "RTClib.h"
 
+
 const byte interruptPin = 2;
 volatile int counter; //# of pulses
 volatile long rpm;    //revs per min
 volatile bool rw_flag;
 volatile float V;     //Velocity [miles per hour]
+volatile int g_cycles = 0; //# of cycles for timer1
 
 RTC_PCF8523      rtc;
 Adafruit_ADS1115 ads;  /* Use this for the 16-bit version */
@@ -70,12 +72,12 @@ void setup(void)
     // Setting these values incorrectly may destroy your ADC!
     //                                                                ADS1015  ADS1115
     //                                                                -------  -------
-    ads.setGain(GAIN_TWOTHIRDS);  // 2/3x gain +/- 6.144V  1 bit = 3mV      0.1875mV (default)
+    //ads.setGain(GAIN_TWOTHIRDS);  // 2/3x gain +/- 6.144V  1 bit = 3mV      0.1875mV (default)
     // ads.setGain(GAIN_ONE);        // 1x gain   +/- 4.096V  1 bit = 2mV      0.125mV
     // ads.setGain(GAIN_TWO);        // 2x gain   +/- 2.048V  1 bit = 1mV      0.0625mV
     // ads.setGain(GAIN_FOUR);       // 4x gain   +/- 1.024V  1 bit = 0.5mV    0.03125mV
     // ads.setGain(GAIN_EIGHT);      // 8x gain   +/- 0.512V  1 bit = 0.25mV   0.015625mV
-    // ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV
+    ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV
 
     ads.begin();
 
@@ -84,7 +86,7 @@ void setup(void)
     TCCR1A  = 0;
     TCCR1B  = 0;
     
-    TCNT1   = 15625;            // preload timer 16MHz/1024 => Period=4sec
+    TCNT1   = 49911;            // preload timer 16MHz/1024 => Period=4sec
     TCCR1B |= ((1 << CS12)| (1 << CS10)) ;    // 1024 prescaler 
     TIMSK1 |= (1 << TOIE1);   // enable timer overflow interrupt
     interrupts();             // enable all interrupts
@@ -112,11 +114,18 @@ void setup(void)
 
 ISR(TIMER1_OVF_vect)        
 {
-    rpm     = counter * 15L;
-    rpm    /= 40L;
-    V       = (rpm / 16.767f) + 0.6f;
-    rw_flag = 1;
-    counter = 0;
+#define PERIOD_THRESHOLD 6 //6 seconds
+    TCNT1 = 49911;
+    g_cycles++;
+    
+    if(PERIOD_THRESHOLD == g_cycles){
+        rpm     = counter * 15L;
+        rpm    /= 40L;
+        V       = (rpm / 16.767f) + 0.6f;
+        rw_flag = 1;
+        counter = 0;
+        g_cycles = 0;
+    }
 }
 
 void pin_irq_handler()
@@ -131,7 +140,7 @@ void loop(void)
     float x_mV, y_mV;
     String str;
 
-    
+
     if(rw_flag){
       
         rw_flag = !rw_flag;
@@ -144,7 +153,7 @@ void loop(void)
         sensorValue = analogRead(sensorPin);
 
 /* Be sure to update this value based on the IC and the gain settings! */
-#define  MULTIPLIER 0.1875F /* ADS1115  @ +/- 6.144V gain (16-bit results) */
+#define  MULTIPLIER 0.0078125F /* ADS1115  @ +/- 0.256V gain (16-bit results) */
 
         x_mV   = results_x * MULTIPLIER;
         y_mV   = results_y * MULTIPLIER;
@@ -174,7 +183,8 @@ void loop(void)
         str += ",\t";
         str += String(lbs_y);
         str += ",\t";
-        str += String(((float)sensorValue - 0.0f) / (1023.0f - 0.0f) * (360.0f - 0.0f));
+        //map dir sensor val from analog 0 to 1013 to 0 to 360 deg
+        str += String(((float)sensorValue - 0.0f) / (1013.0f - 0.0f) * (360.0f - 0.0f));
         str += ",\t";
         str += String(rpm);
         str += ",\t";
@@ -183,5 +193,4 @@ void loop(void)
         WRITE_TO_SDCARD(str);
         Serial.println(str);
     }
-    
 }
