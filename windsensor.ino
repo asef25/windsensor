@@ -6,29 +6,29 @@
 
 
 const byte interruptPin = 2;
-volatile int counter; //# of pulses
-volatile long rpm;    //revs per min
+volatile int counter; /**< # of pulses */
+volatile long rpm;    /**< revs per min */
 volatile bool rw_flag;
-volatile float V;     //Velocity [miles per hour]
-volatile int g_cycles = 0; //# of cycles for timer1
+volatile float V;     /**< Velocity [miles per hour] */
+volatile int g_cycles = 0; /**< # of cycles for timer1 */
 
 RTC_PCF8523      rtc;
-Adafruit_ADS1115 ads;  /* Use this for the 16-bit version */
+Adafruit_ADS1115 ads;  /**< Use this for the 16-bit version */
 
 File        dataFile;
 const char  FILE_PATH[]   = "datalog.txt";
 const int chipSelect      = 10;
 
-/*Wind dir variables*/
-const int sensorPin = A3;    //input value: wind sensor analog
-int sensorValue = 0;  // variable to store the value coming from the sensor
+/**Wind dir variables*/
+const int sensorPin = A3;    /** input value: wind sensor analog */
+int sensorValue = 0;  /** variable to store the value coming from the sensor */
 
 void setup(void)
 {
         
-    // Open serial communications and wait for port to open:
+    /** Open serial communications and wait for port to open: */
     while (!Serial) {
-        ; // wait for serial port to connect. Needed for native USB port only
+        ; /**< wait for serial port to connect. Needed for native USB port only */
     }
     Serial.begin(57600);
 
@@ -81,7 +81,7 @@ void setup(void)
 
     ads.begin();
 
-// initialize timer1 - 16 bit 65536
+/** initialize timer1 - 16 bit (65536) */
     noInterrupts();           // disable all interrupts
     TCCR1A  = 0;
     TCCR1B  = 0;
@@ -91,10 +91,10 @@ void setup(void)
     TIMSK1 |= (1 << TOIE1);   // enable timer overflow interrupt
     interrupts();             // enable all interrupts
 
-// initialize timer0 - rising edge triggered interrupt - pin 2
+/** initialize timer0 - rising edge triggered interrupt - pin 2 */
     attachInterrupt(digitalPinToInterrupt(interruptPin), pin_irq_handler, RISING );
 
-    // initialize variables for interrupts
+    /** initialize variables for interrupts */
     counter = 0;
     rpm     = 0;
     rw_flag = 0;
@@ -108,13 +108,13 @@ void setup(void)
         Serial.println("Failed to open or create " + String(FILE_PATH));    \ 
     }                       
 
-    WRITE_TO_SDCARD("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs,\tdir,\trpm,\tVel");
-    Serial.println("time,\t\t\tx_mV,\ty_mv,\tx_lbs,\ty_lbs,\tdir,\trpm,\tVel");
+    WRITE_TO_SDCARD("time, x_mV, y_mv, x_lbs, y_lbs, dir, rpm, Vel");
+    Serial.println("time, tx_mV, y_mv, x_lbs, y_lbs, dir, rpm, Vel");
 }
 
 ISR(TIMER1_OVF_vect)        
 {
-#define PERIOD_THRESHOLD 6 //6 seconds
+#define PERIOD_THRESHOLD 6 /** 6 second period*/
     TCNT1 = 49911;
     g_cycles++;
     
@@ -135,10 +135,10 @@ void pin_irq_handler()
 
 void loop(void)
 {
-    int16_t results_x, results_y;
-    float lbs_x, lbs_y;
-    float x_mV, y_mV;
-    String str;
+    int16_t results_x, results_y; /**< load sensors values [voltage] for x and y axis*/
+    float lbs_x, lbs_y; /**< load sensor pounds */
+    float x_mV, y_mV; /**< load sensor in milli-volts*/
+    String str; /**< string to write to SD card*/
 
 
     if(rw_flag){
@@ -152,12 +152,13 @@ void loop(void)
         //read wind dir analog value
         sensorValue = analogRead(sensorPin);
 
-/* Be sure to update this value based on the IC and the gain settings! */
-#define  MULTIPLIER 0.0078125F /* ADS1115  @ +/- 0.256V gain (16-bit results) */
+/** Be sure to update this value based on the IC and the gain settings! */
+#define  MULTIPLIER 0.0078125F /**< ADS1115  @ +/- 0.256V gain (16-bit results) */
 
+        /** convert load sensors voltage to mV*/
         x_mV   = results_x * MULTIPLIER;
         y_mV   = results_y * MULTIPLIER;
-        
+        /** map mV range to lbs range: 0mv to 100mv -> 0lbs to 25lbs */
         lbs_x        = x_mV / 100.0 * 25.0;
         lbs_y        = y_mV / 100.0 * 25.0;
     
@@ -173,21 +174,21 @@ void loop(void)
         str += String(now.minute(), DEC);
         str += ':';
         str += String(now.second(), DEC);  
-        str += ",\t";
+        str += ", ";
         str += String(x_mV);
-        str += ",\t";
+        str += ", ";
         str += String(y_mV);
-        str += ",\t";
+        str += ", ";
         
         str += String(lbs_x);
-        str += ",\t";
+        str += ", ";
         str += String(lbs_y);
-        str += ",\t";
-        //map dir sensor val from analog 0 to 1013 to 0 to 360 deg
+        str += ", ";
+        /** map dir sensor val from analog 0 to 1013 -> 0 to 360 deg */
         str += String(((float)sensorValue - 0.0f) / (1013.0f - 0.0f) * (360.0f - 0.0f));
-        str += ",\t";
+        str += ", ";
         str += String(rpm);
-        str += ",\t";
+        str += ", ";
         str += String(V);
         
         WRITE_TO_SDCARD(str);
