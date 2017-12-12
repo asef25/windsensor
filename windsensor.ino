@@ -11,6 +11,8 @@ volatile long rpm;    /**< revs per min */
 volatile bool rw_flag;
 volatile float V;     /**< Velocity [miles per hour] */
 volatile int g_cycles = 0; /**< # of cycles for timer1 */
+float avg_results_x = 0, avg_results_y = 0; /**< load sensors values [voltage] for x and y axis*/
+int avg_counter = 0; /**< counter to compute the average for results_x and _y*/
 
 RTC_PCF8523      rtc;
 Adafruit_ADS1115 ads;  /**< Use this for the 16-bit version */
@@ -135,20 +137,30 @@ void pin_irq_handler()
 
 void loop(void)
 {
-    int16_t results_x, results_y; /**< load sensors values [voltage] for x and y axis*/
     float lbs_x, lbs_y; /**< load sensor pounds */
     float x_mV, y_mV; /**< load sensor in milli-volts*/
     String str; /**< string to write to SD card*/
 
-
+    /** scaling adc values before getting the sums
+     *  32767 is the highest positive adc value for ads1115: (2^15 - 1) 
+     */
+    avg_results_x    += (ads.readADC_Differential_0_1() / 32767.0f ); 
+    avg_results_y    += (ads.readADC_Differential_2_3() / 32767.0f );
+    ++avg_counter;
+    
     if(rw_flag){
       
         rw_flag = !rw_flag;
-        
         DateTime now = rtc.now();
-        results_x    = ads.readADC_Differential_0_1(); 
-        results_y    = ads.readADC_Differential_2_3();
-    
+
+        /**get the average adc results */
+        avg_results_x /= avg_counter;
+        avg_results_y /= avg_counter;
+
+        /**unscale avg_results*/
+        avg_results_x *= 32767.0f;
+        avg_results_y *= 32767.0f;
+        
         //read wind dir analog value
         sensorValue = analogRead(sensorPin);
 
@@ -156,11 +168,11 @@ void loop(void)
 #define  MULTIPLIER 0.0078125F /**< ADS1115  @ +/- 0.256V gain (16-bit results) */
 
         /** convert load sensors voltage to mV*/
-        x_mV   = results_x * MULTIPLIER;
-        y_mV   = results_y * MULTIPLIER;
+        x_mV   = avg_results_x * MULTIPLIER;
+        y_mV   = avg_results_y * MULTIPLIER;
         /** map mV range to lbs range: 0mv to 100mv -> 0lbs to 25lbs */
-        lbs_x        = x_mV / 100.0 * 25.0;
-        lbs_y        = y_mV / 100.0 * 25.0;
+        lbs_x        = x_mV / 100.0f * 25.0f;
+        lbs_y        = y_mV / 100.0f * 25.0f;
     
         str = "";
         str += String(now.year(), DEC);
@@ -193,5 +205,11 @@ void loop(void)
         
         WRITE_TO_SDCARD(str);
         Serial.println(str);
+
+        /** initialize variables for averageing*/
+        avg_results_x = 0;
+        avg_results_y = 0; 
+        avg_counter = 0;
+        
     }
 }
