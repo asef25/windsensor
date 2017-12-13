@@ -1,3 +1,4 @@
+#include <math.h>
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
@@ -13,7 +14,7 @@ volatile float V;     /**< Velocity [miles per hour] */
 volatile int g_cycles = 0; /**< # of cycles for timer1 */
 float avg_results_x = 0, avg_results_y = 0; /**< load sensors values [voltage] for x and y axis*/
 int avg_counter = 0; /**< counter to compute the average for results_x and _y*/
-
+double sinSum = 0, cosSum = 0;
 RTC_PCF8523      rtc;
 Adafruit_ADS1115 ads;  /**< Use this for the 16-bit version */
 
@@ -135,24 +136,56 @@ void pin_irq_handler()
     ++counter;
 }
 
+#define deg2rad(deg) ((deg * 71.0) / 4068.0)
+#define rad2deg(rad) ((rad * 4068.0) / 71.0)
+
+//void deg_averaging_test()
+//{
+//    int i;
+//    double deg[] = {360,270};
+//    double sinSum = 0;
+//    double cosSum = 0;
+//    int result;
+//    
+//    for(i=0; i< 2; ++i){
+//
+//        sinSum += sin(deg2rad(deg[i]));
+//        cosSum += cos(deg2rad(deg[i]));
+//          
+//    }
+//     result = (int)(rad2deg(atan2(sinSum, cosSum)) + 360.0) % 360;
+//     Serial.println(result);
+//     while(1){}
+//}
 void loop(void)
-{
+{   deg_averaging_test();
     float lbs_x, lbs_y; /**< load sensor pounds */
     float x_mV, y_mV; /**< load sensor in milli-volts*/
     String str; /**< string to write to SD card*/
-
+    double deg;
     /** scaling adc values before getting the sums
      *  32767 is the highest positive adc value for ads1115: (2^15 - 1) 
      */
     avg_results_x    += (ads.readADC_Differential_0_1() / 32767.0f ); 
     avg_results_y    += (ads.readADC_Differential_2_3() / 32767.0f );
-    ++avg_counter;
+
+    /** read wind dir analog value */
+    sensorValue = analogRead(sensorPin);
+    /** map dir sensor val from analog 0 to 1013 -> 0 to 360 deg */
+    deg = (sensorValue - 0.0) / (1013.0 - 0.0) * (360.0 - 0.0);
+
+    sinSum += sin(deg2rad(deg));
+    cosSum += cos(deg2rad(deg));
     
+    ++avg_counter;
+
     if(rw_flag){
       
         rw_flag = !rw_flag;
         DateTime now = rtc.now();
 
+        /**compute average deg*/
+        deg = (int)(rad2deg(atan2(sinSum, cosSum)) + 360.0) % 360;
         /**get the average adc results */
         avg_results_x /= avg_counter;
         avg_results_y /= avg_counter;
@@ -161,8 +194,7 @@ void loop(void)
         avg_results_x *= 32767.0f;
         avg_results_y *= 32767.0f;
         
-        //read wind dir analog value
-        sensorValue = analogRead(sensorPin);
+
 
 /** Be sure to update this value based on the IC and the gain settings! */
 #define  MULTIPLIER 0.0078125F /**< ADS1115  @ +/- 0.256V gain (16-bit results) */
@@ -197,7 +229,7 @@ void loop(void)
         str += String(lbs_y);
         str += ", ";
         /** map dir sensor val from analog 0 to 1013 -> 0 to 360 deg */
-        str += String(((float)sensorValue - 0.0f) / (1013.0f - 0.0f) * (360.0f - 0.0f));
+        str += String(deg);
         str += ", ";
         str += String(rpm);
         str += ", ";
@@ -208,7 +240,9 @@ void loop(void)
 
         /** initialize variables for averageing*/
         avg_results_x = 0;
-        avg_results_y = 0; 
+        avg_results_y = 0;
+        cosSum = 0;
+        sinSum = 0;
         avg_counter = 0;
         
     }
