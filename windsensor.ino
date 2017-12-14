@@ -158,7 +158,7 @@ void pin_irq_handler()
 //     while(1){}
 //}
 void loop(void)
-{   deg_averaging_test();
+{   //deg_averaging_test();
     float lbs_x, lbs_y; /**< load sensor pounds */
     float x_mV, y_mV; /**< load sensor in milli-volts*/
     String str; /**< string to write to SD card*/
