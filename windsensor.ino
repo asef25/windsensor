@@ -1,10 +1,21 @@
+#include <stdint.h>
 #include <math.h>
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
-#include <Adafruit_ADS1015.h>
 #include "RTClib.h"
+#include "HX711.h"
 
+#define DOUTA   3   // USED FOR LOAD CELL ON X-AXIS
+#define CLKA    2
+#define DOUTB   5   // USED FOR LOAD CELL ON Y-AXIS
+#define CLKB    4
+
+HX711 x_scale(DOUTA, CLKA);
+HX711 y_scale(DOUTB, CLKB);
+
+//#define zero_factor 8421804
+#define calibration_factor = 2188.0
 
 const byte interruptPin = 2;
 volatile int counter; /**< # of pulses */
@@ -12,11 +23,10 @@ volatile long rpm;    /**< revs per min */
 volatile bool rw_flag;
 volatile float V;     /**< Velocity [miles per hour] */
 volatile int g_cycles = 0; /**< # of cycles for timer1 */
-float avg_results_x = 0, avg_results_y = 0; /**< load sensors values [voltage] for x and y axis*/
+float avg_adc_x = 0, avg_adc_y = 0; /**< load sensors dat output adc for x and y axis*/
 int avg_counter = 0; /**< counter to compute the average for results_x and _y*/
 double sinSum = 0, cosSum = 0;
 RTC_PCF8523      rtc;
-Adafruit_ADS1115 ads;  /**< Use this for the 16-bit version */
 
 File        dataFile;
 const char  FILE_PATH[]   = "datalog.txt";
@@ -43,7 +53,7 @@ void setup(void)
     if (! rtc.initialized()) {
         Serial.println("RTC is NOT running!");
         // following line sets the RTC to the date & time this sketch was compiled
-        // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+        //rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
         // This line sets the RTC with an explicit date & time, for example to set
         // January 21, 2014 at 3am you would call:
         // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
@@ -66,24 +76,11 @@ void setup(void)
         Serial.println("Wiring is correct and a card is present.");
     }
 
-    Serial.println("Getting differential reading from AIN0 (P) and AIN1 (N)");
-    Serial.println("ADC Range: +/- 6.144V (1 bit = 3mV/ADS1015, 0.1875mV/ADS1115)");
-  
-    // The ADC input range (or gain) can be changed via the following
-    // functions, but be careful never to exceed VDD +0.3V max, or to
-    // exceed the upper and lower limits if you adjust the input range!
-    // Setting these values incorrectly may destroy your ADC!
-    //                                                                ADS1015  ADS1115
-    //                                                                -------  -------
-    //ads.setGain(GAIN_TWOTHIRDS);  // 2/3x gain +/- 6.144V  1 bit = 3mV      0.1875mV (default)
-    // ads.setGain(GAIN_ONE);        // 1x gain   +/- 4.096V  1 bit = 2mV      0.125mV
-    // ads.setGain(GAIN_TWO);        // 2x gain   +/- 2.048V  1 bit = 1mV      0.0625mV
-    // ads.setGain(GAIN_FOUR);       // 4x gain   +/- 1.024V  1 bit = 0.5mV    0.03125mV
-    // ads.setGain(GAIN_EIGHT);      // 8x gain   +/- 0.512V  1 bit = 0.25mV   0.015625mV
-    ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV
-
-    ads.begin();
-
+    //x_scale.set_scale(calibration_factor);
+    //y_scale.set_scale(calibration_factor);
+    //x_scale.set_offset(zero_factor);
+    //y_scale.set_offset(zero_factor);
+    
 /** initialize timer1 - 16 bit (65536) */
     noInterrupts();           // disable all interrupts
     TCCR1A  = 0;
@@ -103,16 +100,16 @@ void setup(void)
     rw_flag = 0;
     V       = 0.0f;
 
-#define WRITE_TO_SDCARD(text)                                               \ 
-    if((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                 \
+#define WRITE_TO_SDCARD(text)                                               \
+if((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                 \
         dataFile.println(text);                                             \
         dataFile.close();                                                   \
     } else {                                                                \
-        Serial.println("Failed to open or create " + String(FILE_PATH));    \ 
+        Serial.println("Failed to open or create " + String(FILE_PATH));    \
     }                       
 
-    WRITE_TO_SDCARD("time, x_mV, y_mv, x_lbs, y_lbs, dir, rpm, Vel");
-    Serial.println("time, tx_mV, y_mv, x_lbs, y_lbs, dir, rpm, Vel");
+    WRITE_TO_SDCARD("time, x_adc, y_adc, dir, rpm, Vel");
+    Serial.println("time, x_adc, y_adc,  dir, rpm, Vel");
 }
 
 ISR(TIMER1_OVF_vect)        
@@ -157,6 +154,9 @@ void pin_irq_handler()
 //     Serial.println(result);
 //     while(1){}
 //}
+
+unsigned long MAX_ADC_VAL = (1UL<<23) - 1;
+
 void loop(void)
 {   //deg_averaging_test();
     float lbs_x, lbs_y; /**< load sensor pounds */
@@ -166,8 +166,8 @@ void loop(void)
     /** scaling adc values before getting the sums
      *  32767 is the highest positive adc value for ads1115: (2^15 - 1) 
      */
-    avg_results_x    += (ads.readADC_Differential_0_1() / 32767.0f ); 
-    avg_results_y    += (ads.readADC_Differential_2_3() / 32767.0f );
+    avg_adc_x    += (x_scale.read() / (float)MAX_ADC_VAL); 
+    avg_adc_y    += (y_scale.read() / (float)MAX_ADC_VAL);
 
     /** read wind dir analog value */
     sensorValue = analogRead(sensorPin);
@@ -187,24 +187,13 @@ void loop(void)
         /**compute average deg*/
         deg = (int)(rad2deg(atan2(sinSum, cosSum)) + 360.0) % 360;
         /**get the average adc results */
-        avg_results_x /= avg_counter;
-        avg_results_y /= avg_counter;
+        avg_adc_x /= avg_counter;
+        avg_adc_y /= avg_counter;
 
-        /**unscale avg_results*/
-        avg_results_x *= 32767.0f;
-        avg_results_y *= 32767.0f;
+        /**unscale avg_adc*/
+        avg_adc_x *= MAX_ADC_VAL;
+        avg_adc_y *= MAX_ADC_VAL;
         
-
-
-/** Be sure to update this value based on the IC and the gain settings! */
-#define  MULTIPLIER 0.0078125F /**< ADS1115  @ +/- 0.256V gain (16-bit results) */
-
-        /** convert load sensors voltage to mV*/
-        x_mV   = avg_results_x * MULTIPLIER;
-        y_mV   = avg_results_y * MULTIPLIER;
-        /** map mV range to lbs range: 0mv to 100mv -> 0lbs to 25lbs */
-        lbs_x        = x_mV / 100.0f * 25.0f;
-        lbs_y        = y_mV / 100.0f * 25.0f;
     
         str = "";
         str += String(now.year(), DEC);
@@ -219,14 +208,9 @@ void loop(void)
         str += ':';
         str += String(now.second(), DEC);  
         str += ", ";
-        str += String(x_mV);
+        str += String((int32_t)floor(avg_adc_x));
         str += ", ";
-        str += String(y_mV);
-        str += ", ";
-        
-        str += String(lbs_x);
-        str += ", ";
-        str += String(lbs_y);
+        str += String((int32_t)floor(avg_adc_y));
         str += ", ";
         /** map dir sensor val from analog 0 to 1013 -> 0 to 360 deg */
         str += String(deg);
@@ -239,8 +223,8 @@ void loop(void)
         Serial.println(str);
 
         /** initialize variables for averageing*/
-        avg_results_x = 0;
-        avg_results_y = 0;
+        avg_adc_x = 0;
+        avg_adc_y = 0;
         cosSum = 0;
         sinSum = 0;
         avg_counter = 0;
