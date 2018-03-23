@@ -159,8 +159,8 @@ unsigned long MAX_ADC_VAL = (1UL<<23) - 1;
 
 void loop(void)
 {   //deg_averaging_test();
-    float lbs_x, lbs_y; /**< load sensor pounds */
-    float x_mV, y_mV; /**< load sensor in milli-volts*/
+//    float lbs_x, lbs_y; /**< load sensor pounds */
+//    float x_mV, y_mV; /**< load sensor in milli-volts*/
     String str; /**< string to write to SD card*/
     double deg;
     /** scaling adc values before getting the sums
