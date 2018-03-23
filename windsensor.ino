@@ -6,10 +6,10 @@
 #include "RTClib.h"
 #include "HX711.h"
 
-#define DOUTA   3   // USED FOR LOAD CELL ON X-AXIS
-#define CLKA    2
-#define DOUTB   5   // USED FOR LOAD CELL ON Y-AXIS
-#define CLKB    4
+#define DOUTA   4   // USED FOR LOAD CELL ON X-AXIS
+#define CLKA    3
+#define DOUTB   6   // USED FOR LOAD CELL ON Y-AXIS
+#define CLKB    5
 
 HX711 x_scale(DOUTA, CLKA);
 HX711 y_scale(DOUTB, CLKB);
