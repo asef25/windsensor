@@ -113,7 +113,7 @@ if((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                 \
 
 ISR(TIMER1_OVF_vect)        
 {
-#define PERIOD_THRESHOLD 1 /** 6 second period*/
+#define PERIOD_THRESHOLD 6 /** 6 second period*/
     TCNT1 = 49911;
     g_cycles++;
     
