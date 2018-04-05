@@ -49,7 +49,6 @@ void setup(void)
         Serial.println("Couldn't find RTC");
         while (1);
     }
-
     if (! rtc.initialized()) {
         Serial.println("RTC is NOT running!");
         // following line sets the RTC to the date & time this sketch was compiled
@@ -108,13 +107,13 @@ if((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                 \
         Serial.println("Failed to open or create " + String(FILE_PATH));    \
     }                       
 
-    WRITE_TO_SDCARD("time, x_adc, y_adc, dir, rpm, Vel");
-    Serial.println("time, x_adc, y_adc,  dir, rpm, Vel");
+    WRITE_TO_SDCARD("time, x_kg, y_kg, dir, rpm, Vel");
+    Serial.println("time, x_kg, y_kg,  dir, rpm, Vel");
 }
 
 ISR(TIMER1_OVF_vect)        
 {
-#define PERIOD_THRESHOLD 6 /** 6 second period*/
+#define PERIOD_THRESHOLD 1 /** 6 second period*/
     TCNT1 = 49911;
     g_cycles++;
     
@@ -163,6 +162,7 @@ void loop(void)
 //    float x_mV, y_mV; /**< load sensor in milli-volts*/
     String str; /**< string to write to SD card*/
     double deg;
+//   char buf[]
     /** scaling adc values before getting the sums
      *  32767 is the highest positive adc value for ads1115: (2^15 - 1) 
      */
@@ -194,7 +194,8 @@ void loop(void)
         avg_adc_x *= MAX_ADC_VAL;
         avg_adc_y *= MAX_ADC_VAL;
         
-    
+        double kg_x = avg_adc_x / MAX_ADC_VAL;
+        double kg_y = avg_adc_y / MAX_ADC_VAL; 
         str = "";
         str += String(now.year(), DEC);
         str += '/';
@@ -208,9 +209,9 @@ void loop(void)
         str += ':';
         str += String(now.second(), DEC);  
         str += ", ";
-        str += String((int32_t)floor(avg_adc_x));
+        str += String(kg_x, 4);
         str += ", ";
-        str += String((int32_t)floor(avg_adc_y));
+        str += String(kg_y, 4);
         str += ", ";
         /** map dir sensor val from analog 0 to 1013 -> 0 to 360 deg */
         str += String(deg);
