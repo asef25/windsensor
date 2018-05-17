@@ -1,3 +1,4 @@
+#include <Adafruit_MPL115A2.h>
 #include <stdint.h>
 #include <math.h>
 #include <Wire.h>
@@ -16,6 +17,8 @@ HX711 y_scale(DOUTB, CLKB);
 
 //#define zero_factor 8421804
 #define calibration_factor = 2188.0
+
+Adafruit_MPL115A2 mpl115a2; //SCL analog pin 5, SDA analog pin 4
 
 const byte interruptPin = 2;
 volatile int counter; /**< # of pulses */
@@ -45,6 +48,8 @@ void setup(void)
     }
     Serial.begin(57600);
 
+    mpl115a2.begin(); //for pressure and temp sensor
+    
     if (! rtc.begin()) {
         Serial.println("Couldn't find RTC");
         while (1);
@@ -107,8 +112,8 @@ if((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                 \
         Serial.println("Failed to open or create " + String(FILE_PATH));    \
     }                       
 
-    WRITE_TO_SDCARD("time, x_kg, y_kg, dir, rpm, Vel");
-    Serial.println("time, x_kg, y_kg,  dir, rpm, Vel");
+    WRITE_TO_SDCARD("time, x_kg, y_kg, dir, rpm, Vel, kPa, celsius");
+    Serial.println("time, x_kg, y_kg,  dir, rpm, Vel, kPa, celsius");
 }
 
 ISR(TIMER1_OVF_vect)        
@@ -162,6 +167,7 @@ void loop(void)
 //    float x_mV, y_mV; /**< load sensor in milli-volts*/
     String str; /**< string to write to SD card*/
     double deg;
+    float pressureKPA = 0, temperatureC = 0;
 //   char buf[]
     /** scaling adc values before getting the sums
      *  32767 is the highest positive adc value for ads1115: (2^15 - 1) 
@@ -184,6 +190,9 @@ void loop(void)
         rw_flag = !rw_flag;
         DateTime now = rtc.now();
 
+        /*get pressure and temp*/
+        mpl115a2.getPT(&pressureKPA,&temperatureC);
+        
         /**compute average deg*/
         deg = (int)(rad2deg(atan2(sinSum, cosSum)) + 360.0) % 360;
         /**get the average adc results */
@@ -219,6 +228,10 @@ void loop(void)
         str += String(rpm);
         str += ", ";
         str += String(V);
+        str += ", ";
+        str += String(pressureKPA, 4);
+        str += ", ";
+        str += String(temperatureC, 1);
         
         WRITE_TO_SDCARD(str);
         Serial.println(str);
