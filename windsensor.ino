@@ -1,9 +1,9 @@
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
-#include <Adafruit_ADS1015.h>
 #include "RTClib.h"
-
+int TCAADDR = 0x70; // Multiplexer address
+int FSAADDR = 0x58; // Force Sensor address
 
 const byte interruptPin = 2;
 volatile int counter; /**< # of pulses */
@@ -13,7 +13,7 @@ volatile float V;     /**< Velocity [miles per hour] */
 volatile int g_cycles = 0; /**< # of cycles for timer1 */
 
 RTC_PCF8523      rtc;
-Adafruit_ADS1115 ads;  /**< Use this for the 16-bit version */
+//Adafruit_ADS1115 ads;  /**< Use this for the 16-bit version */
 
 File        dataFile;
 const char  FILE_PATH[]   = "datalog.txt";
@@ -22,7 +22,13 @@ const int chipSelect      = 10;
 /**Wind dir variables*/
 const int sensorPin = A3;    /** input value: wind sensor analog */
 int sensorValue = 0;  /** variable to store the value coming from the sensor */
-
+void tcaselect(uint8_t i) {
+  if (i > 7) return;
+ 
+  Wire.beginTransmission(TCAADDR);
+  Wire.write(1 << i);
+  Wire.endTransmission();  
+}
 void setup(void)
 {
         
@@ -40,7 +46,7 @@ void setup(void)
     if (! rtc.initialized()) {
         Serial.println("RTC is NOT running!");
         // following line sets the RTC to the date & time this sketch was compiled
-        // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+         rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
         // This line sets the RTC with an explicit date & time, for example to set
         // January 21, 2014 at 3am you would call:
         // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
@@ -77,9 +83,9 @@ void setup(void)
     // ads.setGain(GAIN_TWO);        // 2x gain   +/- 2.048V  1 bit = 1mV      0.0625mV
     // ads.setGain(GAIN_FOUR);       // 4x gain   +/- 1.024V  1 bit = 0.5mV    0.03125mV
     // ads.setGain(GAIN_EIGHT);      // 8x gain   +/- 0.512V  1 bit = 0.25mV   0.015625mV
-    ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV
+    //ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV
 
-    ads.begin();
+    //ads.begin();
 
 /** initialize timer1 - 16 bit (65536) */
     noInterrupts();           // disable all interrupts
@@ -100,12 +106,12 @@ void setup(void)
     rw_flag = 0;
     V       = 0.0f;
 
-#define WRITE_TO_SDCARD(text)                                               \ 
+#define WRITE_TO_SDCARD(text)                                               \
     if((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                 \
         dataFile.println(text);                                             \
         dataFile.close();                                                   \
     } else {                                                                \
-        Serial.println("Failed to open or create " + String(FILE_PATH));    \ 
+        Serial.println("Failed to open or create " + String(FILE_PATH));    \
     }                       
 
     WRITE_TO_SDCARD("time, x_mV, y_mv, x_lbs, y_lbs, dir, rpm, Vel");
@@ -135,8 +141,8 @@ void pin_irq_handler()
 
 void loop(void)
 {
-    int16_t results_x, results_y; /**< load sensors values [voltage] for x and y axis*/
-    float lbs_x, lbs_y; /**< load sensor pounds */
+    int results_x, results_y; /**< load sensors values [voltage] for x and y axis*/
+    double lbs_x, lbs_y; /**< load sensor pounds */
     float x_mV, y_mV; /**< load sensor in milli-volts*/
     String str; /**< string to write to SD card*/
 
@@ -146,9 +152,18 @@ void loop(void)
         rw_flag = !rw_flag;
         
         DateTime now = rtc.now();
-        results_x    = ads.readADC_Differential_0_1(); 
-        results_y    = ads.readADC_Differential_2_3();
-    
+        //results_x    = ads.readADC_Differential_0_1(); 
+        //results_y    = ads.readADC_Differential_2_3();
+        tcaselect(2); 
+        Wire.requestFrom(FSAADDR,2); // Request the transmitted two bytes
+        if(Wire.available()<=2) {  // reading in a max of two bytes 
+          results_x = Wire.read() << 2; // Reads the data, shift away status bits
+        }
+        tcaselect(6); 
+        Wire.requestFrom(FSAADDR,2); // Request the transmitted two bytes
+        if(Wire.available()<=2) {  // reading in a max of two bytes 
+          results_y = Wire.read() << 2; // Reads the data, shift away status bits
+        }
         //read wind dir analog value
         sensorValue = analogRead(sensorPin);
 
@@ -156,12 +171,13 @@ void loop(void)
 #define  MULTIPLIER 0.0078125F /**< ADS1115  @ +/- 0.256V gain (16-bit results) */
 
         /** convert load sensors voltage to mV*/
-        x_mV   = results_x * MULTIPLIER;
-        y_mV   = results_y * MULTIPLIER;
+        //x_mV   = results_x * MULTIPLIER;
+        //y_mV   = results_y * MULTIPLIER;
         /** map mV range to lbs range: 0mv to 100mv -> 0lbs to 25lbs */
-        lbs_x        = x_mV / 100.0 * 25.0;
-        lbs_y        = y_mV / 100.0 * 25.0;
-    
+        //lbs_x        = x_mV / 100.0 * 25.0;
+        //lbs_y        = y_mV / 100.0 * 25.0;
+        lbs_x = ((results_x-8.0)/(252-8))*1.5; //data ranges from 8 to 252, 1.5 lb rated force range
+        lbs_y = ((results_y-12.0)/(252-12))*1.5; //data ranges from 12 to 252, 1.5 lb rated force range
         str = "";
         str += String(now.year(), DEC);
         str += '/';
