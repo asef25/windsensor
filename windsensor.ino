@@ -1,10 +1,14 @@
 #include <Wire.h>
-#include <SPI.h>
 #include <SD.h>
-#include "RTClib.h"
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#include "RTClib.h" 
+#include "Adafruit_MCP9808.h"
+#define SEALEVELPRESSURE_HPA (1013.25)
+Adafruit_BME280 bme; 
 int TCAADDR = 0x70; // Multiplexer address
 int FSAADDR = 0x58; // Force Sensor address
-
+int MCPADDR = 0x18; // Inside Temp Sensor address
 const byte interruptPin = 2;
 volatile int counter; /**< # of pulses */
 volatile long rpm;    /**< revs per min */
@@ -15,13 +19,15 @@ volatile int g_cycles = 0; /**< # of cycles for timer1 */
 RTC_PCF8523      rtc;
 //Adafruit_ADS1115 ads;  /**< Use this for the 16-bit version */
 
-File        dataFile;
+// Create the MCP9808 temperature sensor object
+Adafruit_MCP9808 tempsensor = Adafruit_MCP9808();
 const char  FILE_PATH[]   = "datalog.txt";
 const int chipSelect      = 10;
-
+File dataFile;
 /**Wind dir variables*/
 const int sensorPin = A3;    /** input value: wind sensor analog */
 int sensorValue = 0;  /** variable to store the value coming from the sensor */
+
 void tcaselect(uint8_t i) {
   if (i > 7) return;
  
@@ -36,8 +42,17 @@ void setup(void)
     while (!Serial) {
         ; /**< wait for serial port to connect. Needed for native USB port only */
     }
-    Serial.begin(57600);
-
+    Serial.begin(9600);
+    bool status;
+    status = bme.begin();  
+    if (!status) {
+        Serial.println("Could not find a valid BME280 sensor, check wiring!");
+        while (1);
+    }
+    if (!tempsensor.begin()) {
+    Serial.println("Couldn't find MCP9808!");
+    while (1);
+  }
     if (! rtc.begin()) {
         Serial.println("Couldn't find RTC");
         while (1);
@@ -46,7 +61,7 @@ void setup(void)
     if (! rtc.initialized()) {
         Serial.println("RTC is NOT running!");
         // following line sets the RTC to the date & time this sketch was compiled
-         rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+        // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
         // This line sets the RTC with an explicit date & time, for example to set
         // January 21, 2014 at 3am you would call:
         // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
@@ -69,24 +84,6 @@ void setup(void)
         Serial.println("Wiring is correct and a card is present.");
     }
 
-    Serial.println("Getting differential reading from AIN0 (P) and AIN1 (N)");
-    Serial.println("ADC Range: +/- 6.144V (1 bit = 3mV/ADS1015, 0.1875mV/ADS1115)");
-  
-    // The ADC input range (or gain) can be changed via the following
-    // functions, but be careful never to exceed VDD +0.3V max, or to
-    // exceed the upper and lower limits if you adjust the input range!
-    // Setting these values incorrectly may destroy your ADC!
-    //                                                                ADS1015  ADS1115
-    //                                                                -------  -------
-    //ads.setGain(GAIN_TWOTHIRDS);  // 2/3x gain +/- 6.144V  1 bit = 3mV      0.1875mV (default)
-    // ads.setGain(GAIN_ONE);        // 1x gain   +/- 4.096V  1 bit = 2mV      0.125mV
-    // ads.setGain(GAIN_TWO);        // 2x gain   +/- 2.048V  1 bit = 1mV      0.0625mV
-    // ads.setGain(GAIN_FOUR);       // 4x gain   +/- 1.024V  1 bit = 0.5mV    0.03125mV
-    // ads.setGain(GAIN_EIGHT);      // 8x gain   +/- 0.512V  1 bit = 0.25mV   0.015625mV
-    //ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV
-
-    //ads.begin();
-
 /** initialize timer1 - 16 bit (65536) */
     noInterrupts();           // disable all interrupts
     TCCR1A  = 0;
@@ -105,17 +102,18 @@ void setup(void)
     rpm     = 0;
     rw_flag = 0;
     V       = 0.0f;
+    
 
 #define WRITE_TO_SDCARD(text)                                               \
-    if((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                 \
+    if ((dataFile = SD.open(FILE_PATH, FILE_WRITE))){                  \
         dataFile.println(text);                                             \
         dataFile.close();                                                   \
     } else {                                                                \
         Serial.println("Failed to open or create " + String(FILE_PATH));    \
     }                       
 
-    WRITE_TO_SDCARD("time, x_mV, y_mv, x_lbs, y_lbs, dir, rpm, Vel");
-    Serial.println("time, tx_mV, y_mv, x_lbs, y_lbs, dir, rpm, Vel");
+    WRITE_TO_SDCARD("time, x_lbs, y_lbs, Inside temp (C), Outside temp (C), Pressure (Pa), Humidity (%)");
+    Serial.println("time, x_lbs, y_lbs, Inside temp (C), Outside temp (C), Pressure (Pa), Humidity (%)");
 }
 
 ISR(TIMER1_OVF_vect)        
@@ -143,7 +141,6 @@ void loop(void)
 {
     int results_x, results_y; /**< load sensors values [voltage] for x and y axis*/
     double lbs_x, lbs_y; /**< load sensor pounds */
-    float x_mV, y_mV; /**< load sensor in milli-volts*/
     String str; /**< string to write to SD card*/
 
 
@@ -166,16 +163,8 @@ void loop(void)
         }
         //read wind dir analog value
         sensorValue = analogRead(sensorPin);
+        
 
-/** Be sure to update this value based on the IC and the gain settings! */
-#define  MULTIPLIER 0.0078125F /**< ADS1115  @ +/- 0.256V gain (16-bit results) */
-
-        /** convert load sensors voltage to mV*/
-        //x_mV   = results_x * MULTIPLIER;
-        //y_mV   = results_y * MULTIPLIER;
-        /** map mV range to lbs range: 0mv to 100mv -> 0lbs to 25lbs */
-        //lbs_x        = x_mV / 100.0 * 25.0;
-        //lbs_y        = y_mV / 100.0 * 25.0;
         lbs_x = ((results_x-8.0)/(252-8))*1.5; //data ranges from 8 to 252, 1.5 lb rated force range
         lbs_y = ((results_y-12.0)/(252-12))*1.5; //data ranges from 12 to 252, 1.5 lb rated force range
         str = "";
@@ -191,23 +180,22 @@ void loop(void)
         str += ':';
         str += String(now.second(), DEC);  
         str += ", ";
-        str += String(x_mV);
-        str += ", ";
-        str += String(y_mV);
-        str += ", ";
         
         str += String(lbs_x);
         str += ", ";
         str += String(lbs_y);
         str += ", ";
         /** map dir sensor val from analog 0 to 1013 -> 0 to 360 deg */
-        str += String(((float)sensorValue - 0.0f) / (1013.0f - 0.0f) * (360.0f - 0.0f));
+        str += String(tempsensor.readTempC()); 
+        str += ", "; 
+        str += String(bme.readTemperature());
         str += ", ";
-        str += String(rpm);
+        str += String(bme.readPressure()/ 100.0);
         str += ", ";
-        str += String(V);
-        
-        WRITE_TO_SDCARD(str);
+        str += String(bme.readHumidity());
         Serial.println(str);
-    }
+        WRITE_TO_SDCARD(str);
+        
+        }
 }
+
